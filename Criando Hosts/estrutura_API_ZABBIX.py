@@ -177,7 +177,6 @@ criacao={
             "host": "'$HOSTNAME'",
             "name": "'$VISIBLENAME'",
             "interfaces": [],
-            'proxy_hostid': '',
             "groups": ""
         },
         "auth": "'$TOKEN'",

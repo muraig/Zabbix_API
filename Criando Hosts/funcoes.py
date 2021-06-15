@@ -8,21 +8,13 @@ class Le_Tabela():
     def __init__(self, tabela):
         doc_planilha = openpyxl.load_workbook(tabela)
         self.planilha = doc_planilha['Hosts']
-
-        self.host = []
-        self.visible_name = []
-        self.grupos = []
-        self.interfaces_tipo = []
-        self.interfaces_ip = []
-        self.interfaces_porta = []
-        self.descricao = []
-        self.templates = []
-
+        self.hosts = []
         self.le_tabela()
 
-
     def le_tabela(self):
-        self.dados_hosts =[]
+        index = ['Host', 'Visible_Name', 'Grupos', 'Interfaces_Tipo', 'Interfaces_IP', 'Interfaces_Porta',
+                 'Descricao', 'Templates']
+        dados_hosts =[]
         for num_linha in range(4, self.planilha.max_row + 1):
             validacao_linha = True
             for celula in range(2, self.planilha.max_column + 1):
@@ -33,22 +25,10 @@ class Le_Tabela():
                 else:
                     validacao_linha = True
             if validacao_linha == True:
-                self.dados_hosts.append(self.le_linha2(num_linha))
-
+                dados_hosts.append(self.le_linha(num_linha))
+                self.hosts = pd.DataFrame(data=dados_hosts, columns=index)
 
     def le_linha(self, num_linha):
-        dados_host = []
-        self.host.append(self.planilha.cell(num_linha, 2).value)
-        self.visible_name.append(self.planilha.cell(num_linha, 3).value)
-        self.grupos.append((self.planilha.cell(num_linha, 4).value).split(','))
-        self.interfaces_tipo.append((self.planilha.cell(num_linha, 5).value).split(','))
-        self.interfaces_ip.append((self.planilha.cell(num_linha, 6).value).split(','))
-        self.interfaces_porta.append(str((self.planilha.cell(num_linha, 7).value)).split(','))
-        self.descricao.append(self.planilha.cell(num_linha, 8).value)
-        self.templates.append((self.planilha.cell(num_linha, 9).value).split(','))
-        dados_host = [self.host]
-
-    def le_linha2(self, num_linha):
         host = self.planilha.cell(num_linha, 2).value
         visible_name = self.planilha.cell(num_linha, 3).value
         grupos = (self.planilha.cell(num_linha, 4).value).split(',')
@@ -67,13 +47,6 @@ class Le_Tabela():
             return None
         else:
             return valor_celula
-
-    def filtra_grupos(self):
-        for grupo_host in self.grupos:
-            fatias_grupos = grupo_host.split(',')
-            print(fatias_grupos)
-
-
 
 class Zabbix():
     header = {'content-type': 'application/json'}
@@ -124,3 +97,61 @@ class Zabbix():
                 result = resposta_zbx['result']['groupids'][0]
             return result
         return id_grupo
+
+    def consulta_id_hosts(self, host_name):
+        consultas['hostname']['params']['filter']['name'] = host_name
+        consultas["hostname"]["auth"] = self.token
+        resposta_zbx = self.envia_comando_json(consultas['hostname'])
+        if not resposta_zbx['result']:
+            result = None
+        else:
+            result = resposta_zbx['result'][0]['hostid']
+        return result
+
+
+    def cria_host(self, hosts_DataFrame):
+        for index, linha in hosts_DataFrame.hosts.iterrows():
+            interfaces = []
+            grupos = []
+            id_grupo = {'groupid': None}
+
+            for numero_interface in range(0, len(linha['Interfaces_Tipo'])):
+                tipo = linha['Interfaces_Tipo'][numero_interface].replace(' ', '')
+                ip = linha['Interfaces_IP'][numero_interface].replace(' ', '')
+                porta = linha['Interfaces_Porta'][numero_interface].replace(' ', '')
+
+                interface_dict['ip'] = ip
+                interface_dict['port'] = porta
+                if numero_interface == 0:
+                    interface_dict['main'] = 1
+                else:
+                    interface_dict['main'] = 1
+
+                if tipo == 'Agente':
+                    interface_dict['type'] = 1
+                    try:
+                        del interface_dict['details']
+                    except:
+                        pass
+                elif tipo == 'SNMP':
+                    interface_dict['type'] = 2
+                    interface_dict['details'] = {
+                        'version': 2,
+                        'bulk': 1,
+
+                        'community': '{$SNMP_COMMUNITY}'}
+
+                interfaces.append(interface_dict.copy())
+
+            for grupo in linha['Grupos']:
+                id_grupo['groupid'] = self.cria_grupo(grupo)
+                grupos.append(id_grupo.copy())
+
+            criacao['host']['params']['host'] = linha['Host']
+            criacao['host']['params']['name'] = linha['Visible_Name']
+            criacao['host']['params']['interfaces'] = interfaces
+            criacao['host']['params']['groups'] = grupos
+            criacao['host']['auth'] = self.token
+            print(criacao['host'])
+            resposta_zbx = self.envia_comando_json(criacao['host'])
+            print(resposta_zbx)
